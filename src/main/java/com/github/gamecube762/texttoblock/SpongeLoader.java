@@ -1,7 +1,9 @@
 package com.github.gamecube762.texttoblock;
 
 import com.github.gamecube762.texttoblock.services.FontManager;
+import com.github.gamecube762.texttoblock.services.FontManagerService;
 import com.github.gamecube762.texttoblock.services.TextToBlock;
+import com.github.gamecube762.texttoblock.services.TextToBlockService;
 import com.github.gamecube762.texttoblock.util.Alignment;
 import com.github.gamecube762.texttoblock.util.BlockString;
 import com.google.inject.Inject;
@@ -26,16 +28,19 @@ import org.spongepowered.api.plugin.PluginContainer;
 import org.spongepowered.api.text.Text;
 
 import java.awt.*;
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Created by Gamecube762 on 9/3/2016.
  */
-@Plugin(id = "gamecube762.texttoblock", name = "TextToBlock", version = "A001", description = "Turns text into blocks")
+@Plugin(id = "texttoblock", name = "TextToBlock", version = "0.0.2", description = "Turns text into blocks")
 public class SpongeLoader {
 
     @Inject
@@ -43,7 +48,7 @@ public class SpongeLoader {
 
     @Inject
     @DefaultConfig(sharedRoot = true)
-    private File configFile;
+    private Path configPath;
 
     @Inject
     @DefaultConfig(sharedRoot = true)
@@ -53,16 +58,16 @@ public class SpongeLoader {
     @Inject
     private PluginContainer container;
 
-    private FontManager fontManager;
-    private TextToBlock textToBlock;
+    private FontManagerService fontManager;
+    private TextToBlockService textToBlock;
 
     @Listener
     public void gameInitialization(GamePreInitializationEvent event) {
 
         loadconfig();
 
-        fontManager = new FontManager(logger, rootNode);
-        textToBlock = new TextToBlock(fontManager);
+        fontManager = new FontManagerService(logger, rootNode);
+        textToBlock = new TextToBlockService(fontManager);
 
         Sponge.getServiceManager().setProvider(this, FontManager.class, fontManager);
         Sponge.getServiceManager().setProvider(this, TextToBlock.class, textToBlock);
@@ -71,11 +76,14 @@ public class SpongeLoader {
                 CommandSpec.builder()
                         .description(Text.of("List of loaded fonts"))
                         .executor((source, context) -> {
-                            StringBuilder sb = new StringBuilder("Fonts: ");
-                            if (fontManager.getLoadedFonts().isEmpty()) sb.append("None.");
-                            else fontManager.getLoadedFonts().forEach(a -> sb.append(a.getName()).append(", "));
-                            source.sendMessage(Text.of(sb.toString()));
-                            return CommandResult.success();
+                            Collection<Font> fonts = fontManager.getLoadedFonts();
+
+                            if (fonts.isEmpty())
+                                source.sendMessage(Text.of("Fonts: None."));
+                            else
+                                source.sendMessage(Text.of(fonts.stream().map(Font::getName).sorted().collect(Collectors.joining(", ", String.format("Fonts(%s): ", fonts.size()), "."))));
+
+                            return CommandResult.builder().queryResult(fonts.size()).build();
                         })
                         .build(),
                 "fonts",
@@ -132,7 +140,7 @@ public class SpongeLoader {
     private void loadconfig() {
         boolean a = true;
         if (defaultConfigMap == null) loadDefaultConfigMap();
-        if (configFile.exists())
+        if (Files.exists(configPath))
             try {rootNode = configLoader.load();}
             catch (IOException ex) {
                 a = false;

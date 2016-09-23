@@ -1,7 +1,7 @@
 package com.github.gamecube762.texttoblock.util;
 
-import com.github.gamecube762.texttoblock.services.FontManager;
-import com.github.gamecube762.texttoblock.services.TextToBlock;
+import com.github.gamecube762.texttoblock.services.FontManagerService;
+import com.github.gamecube762.texttoblock.services.TextToBlockService;
 import org.spongepowered.api.block.BlockType;
 import org.spongepowered.api.event.cause.Cause;
 import org.spongepowered.api.world.Location;
@@ -30,12 +30,12 @@ public class BlockString {
 
     public BlockString(String text, Font font, Alignment alignment) {
         if (font == null)
-            font = FontManager.getMe().getDefaultFont().get();
+            font = FontManagerService.getMe().getDefaultFont().get();
 
         this.text = text;
         this.font = font;
         this.alignment = alignment;
-        this.bCharsStorage = TextToBlock.getMe().getBlockCharactersMap(text, font);
+        this.bCharsStorage = TextToBlockService.getMe().getBlockCharactersMap(text, font);
     }
 
     /**
