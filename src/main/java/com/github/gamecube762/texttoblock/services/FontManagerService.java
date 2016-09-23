@@ -4,11 +4,8 @@ import ninja.leaping.configurate.ConfigurationNode;
 import org.slf4j.Logger;
 
 import java.awt.*;
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -35,7 +32,7 @@ public class FontManagerService implements FontManager {
         return me;
     }
 
-    public final File FONTDIR = new File("fonts");
+    public final Path FONTDIR = Paths.get("fonts");
 
     private final Map<String, Font> cache = new ConcurrentHashMap<>();
     private Logger logger;
@@ -75,52 +72,73 @@ public class FontManagerService implements FontManager {
      * @param loadAgain Load fonts even though they've already been loaded.
      */
     public void loadFontFolder(boolean search, boolean errFiles, boolean loadAgain) {
-        if (!FONTDIR.exists())
-            FONTDIR.mkdir();
+        if (!Files.exists(FONTDIR))
+            try {Files.createDirectories(FONTDIR);}
+            catch (IOException e) {
+                logger.error(String.format("Failed to create Font directory! | IOExc: %s", e.getMessage()));
+                return;
+            }
 
         if (search)
             config.getNode("fontmanager", "extraScanDirs").getList(o -> (String) o).forEach(o -> {
-                File f = new File(o);
-                if (!f.exists()) return;
-                if (f.isFile()) createFontProxyFileNOERR(f);
-                if (f.isDirectory()) {
-                    File[] b = null;
-                    if ( (b = f.listFiles((dir, name) -> name != null && name.contains(".ttf"))) != null )
-                        Arrays.stream(b).parallel().forEach(this::createFontProxyFileNOERR);
+                Path p = Paths.get(o);
+                if (!Files.exists(p)) return;
+                if (Files.isRegularFile(p)) createFontProxyFileNOERR(p);
+                if (Files.isDirectory(p)) {
+                    try (DirectoryStream<Path> paths = Files.newDirectoryStream(p, "*.ttf")) {
+                        Iterator<Path> i = paths.iterator();
+
+                        if (!i.hasNext()) {
+                            logger.warn(o + " doesn't contain fonts.");
+                            return;
+                        }
+                        while (i.hasNext())
+                            createFontProxyFileNOERR(i.next());
+                    }
+                    catch (IOException | DirectoryIteratorException e ) {
+                        logger.warn(String.format("Unable to scan \"%s\". %s: %s", o, e.getClass().getName(), e.getMessage()));
+                    }
                 }
             });
 
-        File[] files;
-        if ((files = FONTDIR.listFiles((dir, name) -> name.toLowerCase().endsWith(".ttf") || (name.toLowerCase().endsWith("ttfproxy") && (errFiles || !name.startsWith("[ERROR]"))))) == null) {
-            logger.warn("No Fonts Found!");
-            return;
-        }
+        try (DirectoryStream<Path> paths = Files.newDirectoryStream(FONTDIR, errFiles ? "*.{ttf,ttfproxy}" : "*.ttf")) {
+            Iterator<Path> i = paths.iterator();
+            if (!i.hasNext()) {
+                logger.warn("No Fonts Found!");
+                return;
+            }
 
-        Arrays.stream(files).forEach(this::loadFontNOERR);//parallel never properly ends? End of method is reached, but doesn't continue after the end of the loop.
+            while (i.hasNext())
+                loadFontNOERR(i.next());
+        }
+        catch (IOException | DirectoryIteratorException e ) {
+            logger.warn(String.format("Unable to load font folder. %s: %s", e.getClass().getName(), e.getMessage()));
+        }
     }
 
     /**
      * Creates a .ttfproxy from the specified .ttf file and saves it to the font folder.
      * Returns False if errors were thrown.
      *
-     * @param file fileIn
-     * @throws IOException
+     * @param path path to font
      */
-    public boolean createFontProxyFileNOERR(File file) {
-        try {createFontProxyFile(file); return true;}
-        catch (IOException ignore) {return false;}
+    public boolean createFontProxyFileNOERR(Path path) {
+        try {createFontProxyFile(path); return true;}
+        catch (IOException | IllegalArgumentException ignore) {return false;}
     }
 
     /**
      * Creates a .ttfproxy from the specified .ttf file and saves it to the font folder.
      *
-     * @param file fileIn
-     * @throws IOException exception
+     * @param path path to font
+     * @throws IOException If failed to write
+     * @throws IllegalArgumentException If path is not to a .ttf file
      */
-    public void createFontProxyFile(File file) throws IOException {
-        if (!file.getName().contains(".ttf"))
-            throw new IOException("Unsupported Filetype: " + file.getName());
-        Files.write(new File(FONTDIR, file.getName() + "proxy").toPath(), file.getAbsolutePath().getBytes());
+    public void createFontProxyFile(Path path) throws IOException, IllegalArgumentException {
+        String name = path.getFileName().toString();
+        if (!name.contains(".ttf"))
+            throw new IllegalArgumentException("Unsupported Filetype: " + path.getFileName().toString());
+        Files.write(FONTDIR.resolve(name + "proxy"), path.toAbsolutePath().toString().getBytes());
     }
 
     /**
@@ -206,11 +224,11 @@ public class FontManagerService implements FontManager {
      * Attempts to load font from specified file.
      * Returns empty if errors were thrown.
      *
-     * @param file Font File to load
+     * @param path Font File to load
      * @return Optional of Font
      */
-    public Optional<Font> loadFontNOERR(File file)  {
-        try {return Optional.of(loadFont(file));}
+    public Optional<Font> loadFontNOERR(Path path)  {
+        try {return Optional.of(loadFont(path));}
         catch (FontFormatException | IOException e) {
             return Optional.empty();
         }
@@ -219,36 +237,38 @@ public class FontManagerService implements FontManager {
     /**
      * Attempts to load font from specified file.
      *
-     * @param file Font File to load
+     * @param path Font File to load
      * @return font if no exceptions were thrown
-     * @throws IOException ~
-     * @throws FontFormatException ~
+     * @throws IOException If file is unable to be loaded.
+     * @throws FontFormatException Thrown by Font.createFont(...)
+     * @throws IllegalArgumentException If file is not .ttf or .ttfproxy
      */
-    public Font loadFont(File file) throws IOException, FontFormatException {
-        if (!file.getName().contains(".ttf") && !file.getName().contains(".ttfproxy"))
-            throw new IOException("Unsupported Filetype: " + file.getName());
-
-        boolean isProxied = file.getName().endsWith("ttfproxy");
+    public Font loadFont(Path path) throws IOException, FontFormatException, IllegalArgumentException {
+        String name = path.getFileName().toString();
+        boolean isProxied = name.endsWith(".ttfproxy");
         Path proxy = null;
         List<String> pLines = null;
-        Font f = null;
+        Font f;
+
+        if (!name.endsWith(".ttf") && !isProxied)
+            throw new IllegalArgumentException("Unsupported Filetype: " + name);
 
         if (isProxied) {
-            proxy = file.toPath();
-            pLines = Files.readAllLines(file.toPath());//throws
-            file = new File(pLines.get(0));
+            proxy = path;
+            pLines = Files.readAllLines(path);//throws
+            path = Paths.get(pLines.get(0));
         }
 
-        if ((f = cache.get(getFileNameWithoutType(file))) != null)
+        if ((f = cache.get(getFileNameWithoutType(path))) != null)
             return f;
 
-        try {f = Font.createFont(Font.TRUETYPE_FONT, file);}
+        try {f = Font.createFont(Font.TRUETYPE_FONT, path.toFile());}
         catch (FontFormatException | IOException e) {
-            logger.error(String.format("Unable to load %s | %s", file.getName(), e.getMessage()));
+            logger.error(String.format("Unable to load %s | %s", name, e.getMessage()));
 
             if (isProxied) {
                 try {
-                    if (!proxy.getFileName().startsWith("[ERROR]")) {//Rename proxy file.
+                    if (!proxy.getFileName().startsWith("[ERROR] ")) {//Rename proxy file.
                         Files.delete(proxy);
                         proxy = Paths.get(proxy.getParent().toString(), "[ERROR] " + proxy.getFileName());
                     }
@@ -262,9 +282,9 @@ public class FontManagerService implements FontManager {
         }
 
         if (!cache.containsValue(f))
-            cache.put(getFileNameWithoutType(file), f);
+            cache.put(getFileNameWithoutType(path), f);
 
-        if (isProxied && proxy.getFileName().toString().startsWith("[Error] "))//No more error, loaded fine.
+        if (isProxied && proxy.getFileName().toString().startsWith("[Error] "))//No error, loaded fine.
             try {
                 Files.delete(proxy);
                 proxy = Paths.get(proxy.getParent().toString(), proxy.getFileName().toString().replace("[ERROR] ", ""));
@@ -280,11 +300,11 @@ public class FontManagerService implements FontManager {
     /**
      * Gets the name of a file without the file extension.
      *
-     * @param file fileIn
+     * @param path path to file
      * @return String returning filename
      */
-    public static String getFileNameWithoutType(File file) {
-        String name = file.getName();
+    public static String getFileNameWithoutType(Path path) {
+        String name = path.getFileName().toString();
         return name.contains(".") ? name.substring(0, name.lastIndexOf(".")) : name;
     }
 

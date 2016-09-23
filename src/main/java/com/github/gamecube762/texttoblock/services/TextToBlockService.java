@@ -1,15 +1,12 @@
 package com.github.gamecube762.texttoblock.services;
 
 import com.flowpowered.math.vector.Vector2d;
-import com.github.gamecube762.texttoblock.util.Alignment;
 import com.github.gamecube762.texttoblock.util.BlockCharacter;
 import com.github.gamecube762.texttoblock.util.BlockString;
 
-import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

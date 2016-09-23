@@ -1,17 +1,10 @@
 package com.github.gamecube762.texttoblock.services;
 
-import ninja.leaping.configurate.ConfigurationNode;
-import org.slf4j.Logger;
-
 import java.awt.*;
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.*;
-import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Collection;
+import java.util.Optional;
 
 /**
  * FontManager, a service that manages fonts.
@@ -31,18 +24,18 @@ public interface FontManager {
      * Creates a .ttfproxy from the specified .ttf file and saves it to the font folder.
      * Returns False if errors were thrown.
      *
-     * @param file fileIn
-     * @throws IOException
+     * @param path fileIn
      */
-    boolean createFontProxyFileNOERR(File file);
+    boolean createFontProxyFileNOERR(Path path);
 
     /**
      * Creates a .ttfproxy from the specified .ttf file and saves it to the font folder.
      *
-     * @param file fileIn
+     * @param path fileIn
      * @throws IOException exception
+     * @throws IllegalArgumentException If path is not to a .ttf file
      */
-    void createFontProxyFile(File file) throws IOException;
+    void createFontProxyFile(Path path) throws IOException, IllegalArgumentException;
 
     /**
      * Returns an optional of the desired font. Optional will be empty if no font is found.
@@ -108,19 +101,20 @@ public interface FontManager {
      * Attempts to load font from specified file.
      * Returns empty if errors were thrown.
      *
-     * @param file Font File to load
+     * @param path Font File to load
      * @return Optional of Font
      */
-    Optional<Font> loadFontNOERR(File file);
+    Optional<Font> loadFontNOERR(Path path);
 
     /**
      * Attempts to load font from specified file.
      *
-     * @param file Font File to load
+     * @param path Font File to load
      * @return font if no exceptions were thrown
-     * @throws IOException ~
-     * @throws FontFormatException ~
+     * @throws IOException If file is unable to be loaded.
+     * @throws FontFormatException Thrown by Font.createFont(...)
+     * @throws IllegalArgumentException If file is not .ttf or .ttfproxy
      */
-    Font loadFont(File file) throws IOException, FontFormatException;
+    Font loadFont(Path path) throws IOException, FontFormatException, IllegalArgumentException;
 
 }
